@@ -31,15 +31,16 @@ This twelve-character `yyyyyyyyyyyy` serial number is really what is required to
 
 Additionally, instead of the official case, to protect the sensor from knocks and dust (especially since I intend to deploy one of the m into a workshop) I decided to buy [a project enclosure from AliExpress](https://www.aliexpress.com/item/1005001304761174.html), in size 115-90-55, with ears. This allows for mounting the sensors wherever I wish, and the clear plastic cover means the OLED display can still be seen. Drilling a few ventilation holes and one for the USB-C power cable should be easy.
 
-## How it Works
+## Software
 
-If you're using the official AirGradient Arduino sketch (`C02_PM_SHT_OLED_WIFI`), you can configure it to enable WiFi and send data to a remote server every 9 seconds (as it cycles through the display of PM2.5, CO2, temperature, and humidity values).
+We're going to be flashing custom software onto the Wemos D1 Mini microcontroller. I suggest following [AirGradient's guide](https://www.airgradient.com/documentation/basic-setup-skills-and-equipment-needed-to-build-our-airgradient-diy-sensor/) on how to do this for the first time if that is not something you're familiar with.
 
-By default, it sends a small JSON payload to AirGradient's servers, and you can monitor the data via their service.
+The only part in the instructions above that is ambiguous is what to set the board to in the Arduino IDE. I found that `LOLIN(WEMOS) D1 R2 & mini` works. Go to Tools, Boards, esp8266 and find the board listed above. Note that you will first need to have installed the ESP8266 Platform using the board manager; see the instructions listed above.
 
-This project configures the AirGradient sensor for local access (instead of delivering data to AirGradient's servers), and includes two configurations:
+## Prerequisites
 
-  1. [`AirGradient-DIY`](AirGradient-DIY/README.md): This is an Arduino sketch with all the code needed to set up an AirGradient sensor as a Prometheus endpoint on a WiFi network, suitable for scraping from any Prometheus instance (e.g. [geerlingguy/internet-pi](https://github.com/geerlingguy/internet-pi))
-  2. [`AirGradient-ESPHome`](AirGradient-ESPHome/README.md): This is an ESPHome configuration which integrates the AirGradient sensor with Home Assistant using ESPHome.
+AirGradient Library. Tested with 3.1.0-beta.1. In the Arduino IDE, go to Tools, Manage Libraries, and then search for AirGradient and install the AirGradient library.
 
-Please see the README file in the respective configuration folder for more information about how to set up your AirGradient sensor.
+This packages all other dependencies you require.
+
+TODO: Test the assertion above.
