@@ -39,8 +39,27 @@ The only part in the instructions above that is ambiguous is what to set the boa
 
 ## Prerequisites
 
-AirGradient Library. Tested with 3.1.0-beta.1. In the Arduino IDE, go to Tools, Manage Libraries, and then search for AirGradient and install the AirGradient library.
+AirGradient Library. Tested with 3.1.3. In the Arduino IDE, go to Tools, Manage Libraries, and then search for AirGradient and install the AirGradient library.
+
+NTPClient (by Fabrice Weinberg). Tested with 3.2.1.
 
 This packages all other dependencies you require.
 
 TODO: Test the assertion above.
+
+## Configuration
+
+At the top of the .ino file in this project, you will find a number of variables that will allow you to configure the functionality of the sensor to your liking.
+
+Variable                          | Default     | Description
+----------------------------------|-------------|------------
+`WIFI_SSID`                       | N/A         |
+`WIFI_PASSWORD`                   | N/A         |
+`DEVICE_ID`                       | airgradient |
+`DISP_UPDATE_INTERVAL`            | 30000       | How often the OLED display updates. In milliseconds.
+`UTC_HOUR_OFFSET`                 | 1           |
+`DISPLAY_START_HOUR`              | 7           | 
+`DISPLAY_END_HOUR`                | 23          | 
+`SENSOR_PM_UPDATE_INTERVAL`       | 10000       | How often to get a reading from the PM sensor. In milliseconds.
+`SENSOR_CO2_UPDATE_INTERVAL`      | 10000       | How often to get a reading from the CO2 sensor. In milliseconds.
+`SENSOR_TEMP_HUM_UPDATE_INTERVAL` | 10000       | How often to get a reading from the temperature and humidity sensor. In milliseconds.
