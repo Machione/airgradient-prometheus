@@ -1,62 +1,50 @@
+#include "AgConfigure.h"
+#include "AgSchedule.h"
+#include "AgWiFiConnector.h"
 #include <AirGradient.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
+#define WIFI_CONNECT_COUNTDOWN_MAX 180       /** sec */
 #define WIFI_CONNECT_RETRY_MS 10000          /** ms */
-#define DISP_UPDATE_INTERVAL 30000            /** ms */
+#define LED_BAR_COUNT_INIT_VALUE (-1)        /** */
+#define LED_BAR_ANIMATION_PERIOD 100         /** ms */
+#define DISP_UPDATE_INTERVAL 5000            /** ms */
 #define SENSOR_CO2_CALIB_COUNTDOWN_MAX 5     /** sec */
-#define SENSOR_CO2_UPDATE_INTERVAL 10000      /** ms */
-#define SENSOR_PM_UPDATE_INTERVAL 10000       /** ms */
-#define SENSOR_TEMP_HUM_UPDATE_INTERVAL 10000 /** ms */
+#define SENSOR_TVOC_UPDATE_INTERVAL 1000     /** ms */
+#define SENSOR_CO2_UPDATE_INTERVAL 5000      /** ms */
+#define SENSOR_PM_UPDATE_INTERVAL 5000       /** ms */
+#define SENSOR_TEMP_HUM_UPDATE_INTERVAL 2000 /** ms */
 #define DISPLAY_DELAY_SHOW_CONTENT_MS 2000   /** ms */
-const char* ssid = "CHANGEME";
-const char* password = "CHANGEME";
-const char* deviceId = "CHANGEME";
-
-
-/**
- * @brief Schedule handle with timing period
- *
- */
-class AgSchedule {
-public:
-  AgSchedule(int period, void (*handler)(void))
-      : period(period), handler(handler) {}
-  void run(void) {
-    uint32_t ms = (uint32_t)(millis() - count);
-    if (ms >= period) {
-      handler();
-      count = millis();
-    }
-  }
-
-private:
-  void (*handler)(void);
-  int period;
-  int count;
-};
-
+#define WIFI_HOTSPOT_PASSWORD_DEFAULT "airgradient"
+#define PROMETHEUS_DEVICE_ID "workshop"
 
 /** Create airgradient instance for 'DIY_BASIC' board */
-AirGradient ag = AirGradient(DIY_BASIC);
-ESP8266WebServer server(9100);
+static AirGradient ag = AirGradient(DIY_BASIC);
+static Configuration configuration(Serial);
+static WifiConnector wifiConnector(Serial);
+static ESP8266WebServer server(9100);
+static WiFiUDP ntpUDP;
+static NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
 
 static int co2Ppm = -1;
 static int pm25 = -1;
 static float temp = -1001;
 static int hum = -1;
 static long val;
-static bool wifiHasConfig = false; /** */
 
 static void boardInit(void);
 static void failedHandler(String msg);
-static void co2Calibration(void);
+static void executeCo2Calibration(void);
 static void co2Update(void);
 static void pmUpdate(void);
 static void tempHumUpdate(void);
 static void dispHandler(void);
-static void updateWiFiConnect(void);
+static String getDevId(void);
+static void showNr(void);
 
 bool hasSensorS8 = true;
 bool hasSensorPMS = true;
@@ -71,6 +59,7 @@ AgSchedule tempHumSchedule(SENSOR_TEMP_HUM_UPDATE_INTERVAL, tempHumUpdate);
 
 void setup() {
   Serial.begin(115200);
+  showNr();
 
   /** Init I2C */
   Wire.begin(ag.getI2cSdaPin(), ag.getI2cSclPin());
@@ -79,28 +68,40 @@ void setup() {
   /** Board init */
   boardInit();
 
+  /** Init AirGradient server */
+  configuration.setAirGradient(&ag);
+  wifiConnector.setAirGradient(&ag);
+
   /** Show boot display */
   displayShowText("DIY basic", "Lib:" + ag.getVersion(), "");
   delay(2000);
 
   /** WiFi connect */
-  WiFi.mode(WIFI_STA);
-
-  // Configure Hostname
-  if ((deviceId != NULL) && (deviceId[0] == '\0')) {
-    Serial.println("No Device ID is Defined, Defaulting to board defaults");
-  } else {
-    wifi_station_set_hostname(deviceId);
-    WiFi.setHostname(deviceId);
+  // connectToWifi();
+  if (wifiConnector.connect()) {
+    if (WiFi.status() == WL_CONNECTED) {
+      if (configuration.isCo2CalibrationRequested()) {
+        executeCo2Calibration();
+      }
+    }
   }
+  /** Show serial number display */
+  ag.display.clear();
+  ag.display.setCursor(1, 1);
+  ag.display.setText("Warm Up");
+  ag.display.setCursor(1, 15);
+  ag.display.setText("Serial#");
+  ag.display.setCursor(1, 29);
+  String id = getNormalizedMac();
+  Serial.println("Device id: " + id);
+  String id1 = id.substring(0, 9);
+  String id2 = id.substring(9, 12);
+  ag.display.setText("\'" + id1);
+  ag.display.setCursor(1, 40);
+  ag.display.setText(id2 + "\'");
+  ag.display.show();
 
-  // Setup and wait for WiFi.
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    displayShowText("Connecting to ", String(ssid), "");
-  }
-  wifiHasConfig = true;
+  delay(5000);
   
   server.on("/", HandleRoot);
   server.on("/metrics", HandleRoot);
@@ -109,12 +110,15 @@ void setup() {
   server.begin();
   Serial.println("HTTP server started at ip " + WiFi.localIP().toString() + ":9100");
   
-  displayShowText("Warming up", deviceId, "");
-  delay(5000);
+  timeClient.begin();
+  Serial.println("NTP time client started");
+  
+  delay(1000);
 }
 
 void loop() {
-  dispSchedule.run();
+  timeClient.update();
+  
   if (hasSensorS8) {
     co2Schedule.run();
   }
@@ -124,30 +128,34 @@ void loop() {
   if (hasSensorSHT) {
     tempHumSchedule.run();
   }
+  
+  dispSchedule.run();
 
-  updateWiFiConnect();
+  wifiConnector.handle();
 
   /** Read PMS on loop */
   ag.pms5003.handle();
   
   server.handleClient();
+  
+  delay(50);
 }
 
 void displayShowText(String ln1, String ln2, String ln3) {
   char buf[9];
   ag.display.clear();
-
-  ag.display.setCursor(1, 1);
-  ag.display.setText(ln1);
-  ag.display.setCursor(1, 19);
-  ag.display.setText(ln2);
-  ag.display.setCursor(1, 37);
-  ag.display.setText(ln3);
-
+  
+  if (timeClient.getSeconds() < 30) {
+    ag.display.setCursor(1, 1);
+    ag.display.setText(ln1);
+    ag.display.setCursor(1, 19);
+    ag.display.setText(ln2);
+    ag.display.setCursor(1, 37);
+    ag.display.setText(ln3);
+  }
   ag.display.show();
   delay(100);
 }
-
 
 static void boardInit(void) {
   /** Init SHT sensor */
@@ -183,10 +191,10 @@ static void failedHandler(String msg) {
   }
 }
 
-static void co2Calibration(void) {
+static void executeCo2Calibration(void) {
   /** Count down for co2CalibCountdown secs */
   for (int i = 0; i < SENSOR_CO2_CALIB_COUNTDOWN_MAX; i++) {
-    displayShowText("CO2 calib", "after",
+    displayShowText("CO2 calib.", "after",
                     String(SENSOR_CO2_CALIB_COUNTDOWN_MAX - i) + " sec");
     delay(1000);
   }
@@ -194,16 +202,16 @@ static void co2Calibration(void) {
   if (ag.s8.setBaselineCalibration()) {
     displayShowText("Calib", "success", "");
     delay(1000);
-    displayShowText("Wait for", "finish", "...");
+    displayShowText("Wait to", "complete", "...");
     int count = 0;
     while (ag.s8.isBaseLineCalibrationDone() == false) {
       delay(1000);
       count++;
     }
-    displayShowText("Finish", "after", String(count) + " sec");
+    displayShowText("Finished", "after", String(count) + " sec");
     delay(DISPLAY_DELAY_SHOW_CONTENT_MS);
   } else {
-    displayShowText("Calib", "failure!!!", "");
+    displayShowText("Calibration", "failure", "");
     delay(DISPLAY_DELAY_SHOW_CONTENT_MS);
   }
 }
@@ -253,13 +261,20 @@ static void dispHandler() {
   String ln2 = "";
   String ln3 = "";
 
-  if (pm25 < 0) {
-    ln1 = "PM :- ug";
-
+  if (configuration.isPmStandardInUSAQI()) {
+    if (pm25 < 0) {
+      ln1 = "AQI: -";
+    } else {
+      ln1 = "AQI:" + String(ag.pms5003.convertPm25ToUsAqi(pm25));
+    }
   } else {
-    ln1 = "PM :" + String(pm25) + " ug";
+    if (pm25 < 0) {
+      ln1 = "PM :- ug";
+
+    } else {
+      ln1 = "PM :" + String(pm25) + " ug";
+    }
   }
-  
   if (co2Ppm > -1001) {
     ln2 = "CO2:" + String(co2Ppm);
   } else {
@@ -273,34 +288,32 @@ static void dispHandler() {
 
   String _temp = "-";
 
-  if (temp > -1001) {
-    _temp = String(temp).substring(0, 4);
+  if (configuration.isTemperatureUnitInF()) {
+    if (temp > -1001) {
+      _temp = String((temp * 9 / 5) + 32).substring(0, 4);
+    }
+    ln3 = _temp + " " + _hum + "%";
+  } else {
+    if (temp > -1001) {
+      _temp = String(temp).substring(0, 4);
+    }
+    ln3 = _temp + " " + _hum + "%";
   }
-  ln3 = _temp + " " + _hum + "%";
-  
   displayShowText(ln1, ln2, ln3);
 }
 
+static String getDevId(void) { return getNormalizedMac(); }
 
-/**
- * @brief WiFi reconnect handler
- */
-static void updateWiFiConnect(void) {
-  static uint32_t lastRetry;
-  if (wifiHasConfig == false) {
-    return;
-  }
-  if (WiFi.isConnected()) {
-    lastRetry = millis();
-    return;
-  }
-  uint32_t ms = (uint32_t)(millis() - lastRetry);
-  if (ms >= WIFI_CONNECT_RETRY_MS) {
-    lastRetry = millis();
-    WiFi.reconnect();
+static void showNr(void) {
+  Serial.println();
+  Serial.println("Serial nr: " + getDevId());
+}
 
-    Serial.printf("Re-Connect WiFi\r\n");
-  }
+String getNormalizedMac() {
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
+  mac.toLowerCase();
+  return mac;
 }
 
 
@@ -326,7 +339,7 @@ void HandleNotFound() {
 
 String GeneratePrometheusMetrics() {
   String message = "";
-  String idString = "{id=\"" + String(deviceId) + "\",mac=\"" + WiFi.macAddress().c_str() + "\"}";
+  String idString = "{id=\"" + String(PROMETHEUS_DEVICE_ID) + "\",mac=\"" + WiFi.macAddress().c_str() + "\"}";
   
   pmUpdate();
   co2Update();
