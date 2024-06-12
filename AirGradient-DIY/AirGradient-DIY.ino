@@ -1,4 +1,3 @@
-#include "AgConfigure.h"
 #include "AgSchedule.h"
 #include "AgWiFiConnector.h"
 #include <AirGradient.h>
@@ -8,23 +7,17 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
-#define WIFI_CONNECT_COUNTDOWN_MAX 180       /** sec */
-#define WIFI_CONNECT_RETRY_MS 10000          /** ms */
-#define LED_BAR_COUNT_INIT_VALUE (-1)        /** */
-#define LED_BAR_ANIMATION_PERIOD 100         /** ms */
-#define DISP_UPDATE_INTERVAL 5000            /** ms */
-#define SENSOR_CO2_CALIB_COUNTDOWN_MAX 5     /** sec */
-#define SENSOR_TVOC_UPDATE_INTERVAL 1000     /** ms */
-#define SENSOR_CO2_UPDATE_INTERVAL 5000      /** ms */
-#define SENSOR_PM_UPDATE_INTERVAL 5000       /** ms */
-#define SENSOR_TEMP_HUM_UPDATE_INTERVAL 2000 /** ms */
-#define DISPLAY_DELAY_SHOW_CONTENT_MS 2000   /** ms */
+#define DISP_UPDATE_INTERVAL 30
+#define SENSOR_CO2_UPDATE_INTERVAL 10
+#define SENSOR_PM_UPDATE_INTERVAL 10
+#define SENSOR_TEMP_HUM_UPDATE_INTERVAL 10
 #define WIFI_HOTSPOT_PASSWORD_DEFAULT "airgradient"
 #define PROMETHEUS_DEVICE_ID "workshop"
+#define USE_US_AQI false
+#define USE_FAHRENHEIT false
 
 /** Create airgradient instance for 'DIY_BASIC' board */
 static AirGradient ag = AirGradient(DIY_BASIC);
-static Configuration configuration(Serial);
 static WifiConnector wifiConnector(Serial);
 static ESP8266WebServer server(9100);
 static WiFiUDP ntpUDP;
@@ -52,10 +45,10 @@ bool hasSensorSHT = true;
 int pmFailCount = 0;
 int getCO2FailCount = 0;
 
-AgSchedule dispSchedule(DISP_UPDATE_INTERVAL, dispHandler);
-AgSchedule co2Schedule(SENSOR_CO2_UPDATE_INTERVAL, co2Update);
-AgSchedule pmsSchedule(SENSOR_PM_UPDATE_INTERVAL, pmUpdate);
-AgSchedule tempHumSchedule(SENSOR_TEMP_HUM_UPDATE_INTERVAL, tempHumUpdate);
+AgSchedule dispSchedule(DISP_UPDATE_INTERVAL * 1000, dispHandler);
+AgSchedule co2Schedule(SENSOR_CO2_UPDATE_INTERVAL * 1000, co2Update);
+AgSchedule pmsSchedule(SENSOR_PM_UPDATE_INTERVAL * 1000, pmUpdate);
+AgSchedule tempHumSchedule(SENSOR_TEMP_HUM_UPDATE_INTERVAL * 1000, tempHumUpdate);
 
 void setup() {
   Serial.begin(115200);
@@ -69,7 +62,6 @@ void setup() {
   boardInit();
 
   /** Init AirGradient server */
-  configuration.setAirGradient(&ag);
   wifiConnector.setAirGradient(&ag);
 
   /** Show boot display */
@@ -79,10 +71,8 @@ void setup() {
   /** WiFi connect */
   // connectToWifi();
   if (wifiConnector.connect()) {
-    if (WiFi.status() == WL_CONNECTED) {
-      if (configuration.isCo2CalibrationRequested()) {
-        executeCo2Calibration();
-      }
+    if (WiFi.status() != WL_CONNECTED) {
+      delay(500);
     }
   }
   /** Show serial number display */
@@ -182,6 +172,10 @@ static void boardInit(void) {
   ag.display.clear();
   ag.display.show();
   delay(100);
+  
+  if (hasSensorS8) {
+    executeCo2Calibration();
+  }
 }
 
 static void failedHandler(String msg) {
@@ -193,9 +187,8 @@ static void failedHandler(String msg) {
 
 static void executeCo2Calibration(void) {
   /** Count down for co2CalibCountdown secs */
-  for (int i = 0; i < SENSOR_CO2_CALIB_COUNTDOWN_MAX; i++) {
-    displayShowText("CO2 calib.", "after",
-                    String(SENSOR_CO2_CALIB_COUNTDOWN_MAX - i) + " sec");
+  for (int i = 0; i < 5; i++) {
+    displayShowText("CO2 calib.", "after", String(5 - i) + " sec");
     delay(1000);
   }
 
@@ -209,10 +202,10 @@ static void executeCo2Calibration(void) {
       count++;
     }
     displayShowText("Finished", "after", String(count) + " sec");
-    delay(DISPLAY_DELAY_SHOW_CONTENT_MS);
+    delay(2000);
   } else {
     displayShowText("Calibration", "failure", "");
-    delay(DISPLAY_DELAY_SHOW_CONTENT_MS);
+    delay(2000);
   }
 }
 
@@ -261,22 +254,22 @@ static void dispHandler() {
   String ln2 = "";
   String ln3 = "";
 
-  if (configuration.isPmStandardInUSAQI()) {
+  if (USE_US_AQI) {
     if (pm25 < 0) {
       ln1 = "AQI: -";
     } else {
-      ln1 = "AQI:" + String(ag.pms5003.convertPm25ToUsAqi(pm25));
+      ln1 = "AQI: " + String(ag.pms5003.convertPm25ToUsAqi(pm25));
     }
   } else {
     if (pm25 < 0) {
-      ln1 = "PM :- ug";
+      ln1 = "PM: -³";
 
     } else {
-      ln1 = "PM :" + String(pm25) + " ug";
+      ln1 = "PM: " + String(pm25) + "μg/m³";
     }
   }
   if (co2Ppm > -1001) {
-    ln2 = "CO2:" + String(co2Ppm);
+    ln2 = "CO2: " + String(co2Ppm) + "ppm";
   } else {
     ln2 = "CO2: -";
   }
@@ -288,16 +281,16 @@ static void dispHandler() {
 
   String _temp = "-";
 
-  if (configuration.isTemperatureUnitInF()) {
+  if (USE_FAHRENHEIT) {
     if (temp > -1001) {
       _temp = String((temp * 9 / 5) + 32).substring(0, 4);
     }
-    ln3 = _temp + " " + _hum + "%";
+    ln3 = _temp + "°F " + _hum + "%";
   } else {
     if (temp > -1001) {
       _temp = String(temp).substring(0, 4);
     }
-    ln3 = _temp + " " + _hum + "%";
+    ln3 = _temp + "°C " + _hum + "%";
   }
   displayShowText(ln1, ln2, ln3);
 }
@@ -341,18 +334,23 @@ String GeneratePrometheusMetrics() {
   String message = "";
   String idString = "{id=\"" + String(PROMETHEUS_DEVICE_ID) + "\",mac=\"" + WiFi.macAddress().c_str() + "\"}";
   
-  pmUpdate();
-  co2Update();
-  tempHumUpdate();
-  
   if (co2Ppm > -1001) {
-    message += "# HELP pm02 Particulate Matter PM2.5 value, in μg/m3 \n";
-    message += "# TYPE pm02 gauge\n";
-    message += "pm02";
-    message += idString;
-    message += String(pm25);
+    if (USE_US_AQI) {
+      message += "# HELP pm02 Particulate Matter PM2.5 value, in US AQI\n";
+      message += "# TYPE pm02 gauge\n";
+      message += "pm02";
+      message += idString;
+      message += String(ag.pms5003.convertPm25ToUsAqi(pm25));
+    } else {
+      message += "# HELP pm02 Particulate Matter PM2.5 value, in μg/m³\n";
+      message += "# TYPE pm02 gauge\n";
+      message += "pm02";
+      message += idString;
+      message += String(pm25);
+    }
     message += "\n";
   }
+  
   if (co2Ppm > -1001) {
     message += "# HELP rco2 CO2 value, in ppm\n";
     message += "# TYPE rco2 gauge\n";
@@ -361,14 +359,24 @@ String GeneratePrometheusMetrics() {
     message += String(co2Ppm);
     message += "\n";
   }
+  
   if (temp > -1001) {
-    message += "# HELP atmp Temperature, in degrees Celsius\n";
-    message += "# TYPE atmp gauge\n";
-    message += "atmp";
-    message += idString;
-    message += String(temp);
+    if (USE_FAHRENHEIT) {
+      message += "# HELP atmp Temperature, in degrees Fahrenheit\n";
+      message += "# TYPE atmp gauge\n";
+      message += "atmp";
+      message += idString;
+      message += String((temp * 9 / 5) + 32);
+    } else {
+      message += "# HELP atmp Temperature, in degrees Celsius\n";
+      message += "# TYPE atmp gauge\n";
+      message += "atmp";
+      message += idString;
+      message += String(temp);
+    }
     message += "\n";
   }
+  
   if (hum > 0) {
     message += "# HELP rhum Relative humidity, in percent\n";
     message += "# TYPE rhum gauge\n";
@@ -377,5 +385,6 @@ String GeneratePrometheusMetrics() {
     message += String(hum);
     message += "\n";
   }
+  
   return message;
 }
