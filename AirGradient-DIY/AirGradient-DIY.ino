@@ -16,13 +16,16 @@
 #define USE_US_AQI false
 #define USE_FAHRENHEIT false
 #define TEMPERATURE_CORRECTION_OFFSET -1.5
+#define UTC_OFFSET 0
+#define DISPLAY_TURN_ON_HOUR 6
+#define DISPLAY_TURN_OFF_HOUR 22
 
 /** Create airgradient instance for 'DIY_BASIC' board */
 static AirGradient ag = AirGradient(DIY_BASIC);
 static WifiConnector wifiConnector(Serial);
 static ESP8266WebServer server(9100);
 static WiFiUDP ntpUDP;
-static NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
+static NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
 static int co2Ppm = -1;
 static int pm25 = -1;
@@ -101,6 +104,9 @@ void setup() {
   server.begin();
   Serial.println("HTTP server started at ip " + WiFi.localIP().toString() + ":9100");
   
+  timeClient.setTimeOffset(UTC_OFFSET * 3600);
+  timeClient.setUpdateInterval(60000);
+
   timeClient.begin();
   Serial.println("NTP time client started");
   
@@ -136,7 +142,8 @@ void displayShowText(String ln1, String ln2, String ln3) {
   char buf[9];
   ag.display.clear();
   
-  if (timeClient.getSeconds() < 30) {
+  static int currentHour = timeClient.getHours();
+  if (currentHour >= DISPLAY_TURN_ON_HOUR and currentHour < DISPLAY_TURN_OFF_HOUR) {
     ag.display.setCursor(1, 1);
     ag.display.setText(ln1);
     ag.display.setCursor(1, 19);
@@ -144,6 +151,7 @@ void displayShowText(String ln1, String ln2, String ln3) {
     ag.display.setCursor(1, 37);
     ag.display.setText(ln3);
   }
+  
   ag.display.show();
   delay(100);
 }
