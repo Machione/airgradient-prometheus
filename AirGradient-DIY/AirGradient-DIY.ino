@@ -15,6 +15,7 @@
 #define PROMETHEUS_DEVICE_ID "workshop"
 #define USE_US_AQI false
 #define USE_FAHRENHEIT false
+#define TEMPERATURE_CORRECTION_OFFSET -1.5
 
 /** Create airgradient instance for 'DIY_BASIC' board */
 static AirGradient ag = AirGradient(DIY_BASIC);
@@ -240,7 +241,7 @@ void pmUpdate() {
 
 static void tempHumUpdate() {
   if (ag.sht.measure()) {
-    temp = ag.sht.getTemperature();
+    temp = ag.sht.getTemperature() + TEMPERATURE_CORRECTION_OFFSET;
     hum = ag.sht.getRelativeHumidity();
     Serial.printf("Temperature: %0.2f\r\n", temp);
     Serial.printf("   Humidity: %d\r\n", hum);
