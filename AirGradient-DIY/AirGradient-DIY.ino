@@ -25,8 +25,8 @@
 #define STATUS_LED true
 #define STATUS_LED_PIN D7
 #define STATUS_CHECK_SENSOR "co2" /* one of co2, pm, temp, or hum */
-#define STATUS_WARNING_THRESHOLD_VALUE 500
-#define STATUS_DANGER_THRESHOLD_VALUE 800
+#define STATUS_WARNING_THRESHOLD_VALUE 1001
+#define STATUS_DANGER_THRESHOLD_VALUE 1501
 
 /* Create airgradient instance for 'DIY_BASIC' board */
 static AirGradient ag = AirGradient(DIY_BASIC);
