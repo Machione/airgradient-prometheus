@@ -11,7 +11,6 @@
 #define SENSOR_CO2_UPDATE_INTERVAL 10
 #define SENSOR_PM_UPDATE_INTERVAL 10
 #define SENSOR_TEMP_HUM_UPDATE_INTERVAL 10
-#define WIFI_HOTSPOT_PASSWORD_DEFAULT "airgradient"
 #define PROMETHEUS_DEVICE_ID "workshop"
 #define USE_US_AQI false
 #define USE_FAHRENHEIT false
@@ -19,8 +18,12 @@
 #define UTC_OFFSET 0
 #define DISPLAY_TURN_ON_HOUR 6
 #define DISPLAY_TURN_OFF_HOUR 22
+#define STATUS_LED_PIN 13
+#define STATUS_CHECK_SENSOR "co2" /* one of co2, pm, temp, or hum */
+#define STATUS_WARNING_THRESHOLD_VALUE 500
+#define STATUS_DANGER_THRESHOLD_VALUE 800
 
-/** Create airgradient instance for 'DIY_BASIC' board */
+/* Create airgradient instance for 'DIY_BASIC' board */
 static AirGradient ag = AirGradient(DIY_BASIC);
 static WifiConnector wifiConnector(Serial);
 static ESP8266WebServer server(9100);
@@ -30,8 +33,8 @@ static NTPClient timeClient(ntpUDP, "pool.ntp.org");
 static int co2Ppm = -1;
 static int pm25 = -1;
 static float temp = -1001;
-static int hum = -1;
-static long val;
+static float hum = -1.0;
+static bool ledState = false;
 
 static void boardInit(void);
 static void failedHandler(String msg);
@@ -42,6 +45,7 @@ static void tempHumUpdate(void);
 static void dispHandler(void);
 static String getDevId(void);
 static void showNr(void);
+static void statusLEDUpdate(void);
 
 bool hasSensorS8 = true;
 bool hasSensorPMS = true;
@@ -53,6 +57,7 @@ AgSchedule dispSchedule(DISP_UPDATE_INTERVAL * 1000, dispHandler);
 AgSchedule co2Schedule(SENSOR_CO2_UPDATE_INTERVAL * 1000, co2Update);
 AgSchedule pmsSchedule(SENSOR_PM_UPDATE_INTERVAL * 1000, pmUpdate);
 AgSchedule tempHumSchedule(SENSOR_TEMP_HUM_UPDATE_INTERVAL * 1000, tempHumUpdate);
+AgSchedule statusLEDSchedule(500, statusLEDUpdate);
 
 void setup() {
   Serial.begin(115200);
@@ -110,6 +115,12 @@ void setup() {
   timeClient.begin();
   Serial.println("NTP time client started");
   
+  if (STATUS_LED_PIN > 0) {
+    pinMode(STATUS_LED_PIN, OUTPUT);
+    digitalWrite(STATUS_LED_PIN, LOW);
+    ledState = false;
+  }
+  
   delay(1000);
 }
 
@@ -127,6 +138,10 @@ void loop() {
   }
   
   dispSchedule.run();
+  
+  if (STATUS_LED_PIN > 0) {
+    statusLEDSchedule.run();
+  }
 
   wifiConnector.handle();
 
@@ -143,7 +158,7 @@ void displayShowText(String ln1, String ln2, String ln3) {
   ag.display.clear();
   
   static int currentHour = timeClient.getHours();
-  if (currentHour >= DISPLAY_TURN_ON_HOUR and currentHour < DISPLAY_TURN_OFF_HOUR) {
+  if (currentHour >= DISPLAY_TURN_ON_HOUR && currentHour < DISPLAY_TURN_OFF_HOUR) {
     ag.display.setCursor(1, 1);
     ag.display.setText(ln1);
     ag.display.setCursor(1, 19);
@@ -252,9 +267,44 @@ static void tempHumUpdate() {
     temp = ag.sht.getTemperature() + TEMPERATURE_CORRECTION_OFFSET;
     hum = ag.sht.getRelativeHumidity();
     Serial.printf("Temperature: %0.2f\r\n", temp);
-    Serial.printf("   Humidity: %d\r\n", hum);
+    Serial.printf("   Humidity: %0.2f\r\n", hum);
   } else {
     Serial.println("Meaure SHT failed");
+  }
+}
+
+static void statusLEDUpdate() {
+  float value = 0;
+  if (STATUS_CHECK_SENSOR == "co2") {
+    value = float(co2Ppm);
+  } else if (STATUS_CHECK_SENSOR == "pm") {
+    value = float(pm25);
+    if (USE_US_AQI) {
+      value = float(ag.pms5003.convertPm25ToUsAqi(pm25));
+    }
+  } else if (STATUS_CHECK_SENSOR == "temp") {
+    value = temp;
+    if (USE_FAHRENHEIT) {
+      value = (temp * 9 / 5) + 32;
+    }
+  } else if (STATUS_CHECK_SENSOR == "hum") {
+    value = hum;
+  }
+  
+  if (value > STATUS_WARNING_THRESHOLD_VALUE && ledState == false) {
+    digitalWrite(STATUS_LED_PIN, HIGH);
+    ledState = true;
+  } else if (value > STATUS_DANGER_THRESHOLD_VALUE) {
+    if (ledState) {
+      digitalWrite(STATUS_LED_PIN, LOW);
+      ledState = false;
+    } else {
+      digitalWrite(STATUS_LED_PIN, HIGH);
+      ledState = true;
+    }
+  } else if (ledState == true) {
+    digitalWrite(STATUS_LED_PIN, LOW);
+    ledState = false;
   }
 }
 
@@ -285,7 +335,7 @@ static void dispHandler() {
 
   String _hum = "-";
   if (hum > 0) {
-    _hum = String(hum);
+    _hum = String(hum).substring(0, 4);
   }
 
   String _temp = "-";
