@@ -7,18 +7,23 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
+#define PROMETHEUS_DEVICE_ID "workshop"
+#define TEMPERATURE_CORRECTION_OFFSET -1.5
+
+#define USE_US_AQI false
+#define USE_FAHRENHEIT false
+
 #define DISP_UPDATE_INTERVAL 30
 #define SENSOR_CO2_UPDATE_INTERVAL 10
 #define SENSOR_PM_UPDATE_INTERVAL 10
 #define SENSOR_TEMP_HUM_UPDATE_INTERVAL 10
-#define PROMETHEUS_DEVICE_ID "workshop"
-#define USE_US_AQI false
-#define USE_FAHRENHEIT false
-#define TEMPERATURE_CORRECTION_OFFSET -1.5
+
 #define UTC_OFFSET 0
 #define DISPLAY_TURN_ON_HOUR 6
 #define DISPLAY_TURN_OFF_HOUR 22
-#define STATUS_LED_PIN 13
+
+#define STATUS_LED true
+#define STATUS_LED_PIN D7
 #define STATUS_CHECK_SENSOR "co2" /* one of co2, pm, temp, or hum */
 #define STATUS_WARNING_THRESHOLD_VALUE 500
 #define STATUS_DANGER_THRESHOLD_VALUE 800
@@ -28,13 +33,12 @@ static AirGradient ag = AirGradient(DIY_BASIC);
 static WifiConnector wifiConnector(Serial);
 static ESP8266WebServer server(9100);
 static WiFiUDP ntpUDP;
-static NTPClient timeClient(ntpUDP, "pool.ntp.org");
+static NTPClient timeClient(ntpUDP, "pool.ntp.org", UTC_OFFSET * 3600, 60000);
 
 static int co2Ppm = -1;
 static int pm25 = -1;
 static float temp = -1001;
 static float hum = -1.0;
-static bool ledState = false;
 
 static void boardInit(void);
 static void failedHandler(String msg);
@@ -63,28 +67,28 @@ void setup() {
   Serial.begin(115200);
   showNr();
 
-  /** Init I2C */
+  /* Init I2C */
   Wire.begin(ag.getI2cSdaPin(), ag.getI2cSclPin());
   delay(1000);
 
-  /** Board init */
+  /* Board init */
   boardInit();
 
-  /** Init AirGradient server */
+  /* Init AirGradient server */
   wifiConnector.setAirGradient(&ag);
 
-  /** Show boot display */
+  /* Show boot display */
   displayShowText("DIY basic", "Lib:" + ag.getVersion(), "");
   delay(2000);
 
-  /** WiFi connect */
+  /* WiFi connect */
   // connectToWifi();
   if (wifiConnector.connect()) {
     if (WiFi.status() != WL_CONNECTED) {
       delay(500);
     }
   }
-  /** Show serial number display */
+  /* Show serial number display */
   ag.display.clear();
   ag.display.setCursor(1, 1);
   ag.display.setText("Warm Up");
@@ -102,24 +106,19 @@ void setup() {
 
   delay(5000);
   
+  if (hasSensorS8) {
+    executeCo2Calibration();
+  }
+  
   server.on("/", HandleRoot);
   server.on("/metrics", HandleRoot);
   server.onNotFound(HandleNotFound);
 
   server.begin();
   Serial.println("HTTP server started at ip " + WiFi.localIP().toString() + ":9100");
-  
-  timeClient.setTimeOffset(UTC_OFFSET * 3600);
-  timeClient.setUpdateInterval(60000);
 
   timeClient.begin();
   Serial.println("NTP time client started");
-  
-  if (STATUS_LED_PIN > 0) {
-    pinMode(STATUS_LED_PIN, OUTPUT);
-    digitalWrite(STATUS_LED_PIN, LOW);
-    ledState = false;
-  }
   
   delay(1000);
 }
@@ -139,26 +138,27 @@ void loop() {
   
   dispSchedule.run();
   
-  if (STATUS_LED_PIN > 0) {
+  if (STATUS_LED) {
     statusLEDSchedule.run();
   }
 
   wifiConnector.handle();
 
-  /** Read PMS on loop */
+  /* Read PMS on loop */
   ag.pms5003.handle();
   
   server.handleClient();
   
-  delay(50);
+  delay(100);
 }
 
 void displayShowText(String ln1, String ln2, String ln3) {
   char buf[9];
   ag.display.clear();
   
-  static int currentHour = timeClient.getHours();
-  if (currentHour >= DISPLAY_TURN_ON_HOUR && currentHour < DISPLAY_TURN_OFF_HOUR) {
+  int currentHour = timeClient.getHours();
+  Serial.println("Hour " + String(currentHour));
+  if (millis() < 60000 || (currentHour >= DISPLAY_TURN_ON_HOUR && currentHour < DISPLAY_TURN_OFF_HOUR)) {
     ag.display.setCursor(1, 1);
     ag.display.setText(ln1);
     ag.display.setCursor(1, 19);
@@ -172,34 +172,34 @@ void displayShowText(String ln1, String ln2, String ln3) {
 }
 
 static void boardInit(void) {
-  /** Init SHT sensor */
+  /* Init SHT sensor */
   if (ag.sht.begin(Wire) == false) {
     hasSensorSHT = false;
     Serial.println("SHT sensor not found");
   }
 
-  /** CO2 init */
+  /* CO2 init */
   if (ag.s8.begin(&Serial) == false) {
     Serial.println("CO2 S8 snsor not found");
     hasSensorS8 = false;
   }
 
-  /** PMS init */
+  /* PMS init */
   if (ag.pms5003.begin(&Serial) == false) {
     Serial.println("PMS sensor not found");
     hasSensorPMS = false;
   }
-
-  /** Display init */
+  
+  if (STATUS_LED) {
+    pinMode(STATUS_LED_PIN, OUTPUT);
+  }
+  
+  /* Display init */
   ag.display.begin(Wire);
   ag.display.setTextColor(1);
   ag.display.clear();
   ag.display.show();
   delay(100);
-  
-  if (hasSensorS8) {
-    executeCo2Calibration();
-  }
 }
 
 static void failedHandler(String msg) {
@@ -210,7 +210,7 @@ static void failedHandler(String msg) {
 }
 
 static void executeCo2Calibration(void) {
-  /** Count down for co2CalibCountdown secs */
+  /* Count down for co2CalibCountdown secs */
   for (int i = 0; i < 5; i++) {
     displayShowText("CO2 calib.", "after", String(5 - i) + " sec");
     delay(1000);
@@ -274,37 +274,34 @@ static void tempHumUpdate() {
 }
 
 static void statusLEDUpdate() {
-  float value = 0;
-  if (STATUS_CHECK_SENSOR == "co2") {
-    value = float(co2Ppm);
-  } else if (STATUS_CHECK_SENSOR == "pm") {
-    value = float(pm25);
-    if (USE_US_AQI) {
-      value = float(ag.pms5003.convertPm25ToUsAqi(pm25));
-    }
-  } else if (STATUS_CHECK_SENSOR == "temp") {
-    value = temp;
-    if (USE_FAHRENHEIT) {
-      value = (temp * 9 / 5) + 32;
-    }
-  } else if (STATUS_CHECK_SENSOR == "hum") {
-    value = hum;
-  }
-  
-  if (value > STATUS_WARNING_THRESHOLD_VALUE && ledState == false) {
-    digitalWrite(STATUS_LED_PIN, HIGH);
-    ledState = true;
-  } else if (value > STATUS_DANGER_THRESHOLD_VALUE) {
-    if (ledState) {
-      digitalWrite(STATUS_LED_PIN, LOW);
-      ledState = false;
-    } else {
-      digitalWrite(STATUS_LED_PIN, HIGH);
-      ledState = true;
-    }
-  } else if (ledState == true) {
+  int currentHour = timeClient.getHours();
+  if (currentHour >= DISPLAY_TURN_OFF_HOUR || currentHour < DISPLAY_TURN_ON_HOUR) {
     digitalWrite(STATUS_LED_PIN, LOW);
-    ledState = false;
+  } else {
+    float value = 0;
+    if (STATUS_CHECK_SENSOR == "co2") {
+      value = float(co2Ppm);
+    } else if (STATUS_CHECK_SENSOR == "pm") {
+      value = float(pm25);
+      if (USE_US_AQI) {
+        value = float(ag.pms5003.convertPm25ToUsAqi(pm25));
+      }
+    } else if (STATUS_CHECK_SENSOR == "temp") {
+      value = temp;
+      if (USE_FAHRENHEIT) {
+        value = (temp * 9 / 5) + 32;
+      }
+    } else if (STATUS_CHECK_SENSOR == "hum") {
+      value = hum;
+    }
+    
+    if (value > STATUS_DANGER_THRESHOLD_VALUE) {
+      digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN));
+    } else if (value > STATUS_WARNING_THRESHOLD_VALUE) {
+      digitalWrite(STATUS_LED_PIN, HIGH);
+    } else {
+      digitalWrite(STATUS_LED_PIN, LOW);
+    }
   }
 }
 
@@ -321,14 +318,14 @@ static void dispHandler() {
     }
   } else {
     if (pm25 < 0) {
-      ln1 = "PM: -³";
+      ln1 = "PM:  -";
 
     } else {
-      ln1 = "PM: " + String(pm25) + "μg/m³";
+      ln1 = "PM:  " + String(pm25);
     }
   }
   if (co2Ppm > -1001) {
-    ln2 = "CO2: " + String(co2Ppm) + "ppm";
+    ln2 = "CO2: " + String(co2Ppm);
   } else {
     ln2 = "CO2: -";
   }
@@ -344,12 +341,12 @@ static void dispHandler() {
     if (temp > -1001) {
       _temp = String((temp * 9 / 5) + 32).substring(0, 4);
     }
-    ln3 = _temp + "°F " + _hum + "%";
+    ln3 = _temp + " " + _hum + "%";
   } else {
     if (temp > -1001) {
       _temp = String(temp).substring(0, 4);
     }
-    ln3 = _temp + "°C " + _hum + "%";
+    ln3 = _temp + " " + _hum + "%";
   }
   displayShowText(ln1, ln2, ln3);
 }
