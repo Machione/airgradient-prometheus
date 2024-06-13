@@ -7,7 +7,13 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
-#define PROMETHEUS_DEVICE_ID "workshop"
+
+/*
+CONFIGURATION 
+See https://github.com/Machione/airgradient-prometheus?tab=readme-ov-file#configuration
+for detailed instructions.
+*/
+#define PROMETHEUS_DEVICE_ID "airgradient"
 #define TEMPERATURE_CORRECTION_OFFSET -1.5
 
 #define USE_US_AQI false
@@ -264,7 +270,11 @@ void pmUpdate() {
 
 static void tempHumUpdate() {
   if (ag.sht.measure()) {
-    temp = ag.sht.getTemperature() + TEMPERATURE_CORRECTION_OFFSET;
+    temp = ag.sht.getTemperature();
+    if (USE_FAHRENHEIT) {
+      temp = (temp * 9 / 5) + 32;
+    }
+    temp += TEMPERATURE_CORRECTION_OFFSET;
     hum = ag.sht.getRelativeHumidity();
     Serial.printf("Temperature: %0.2f\r\n", temp);
     Serial.printf("   Humidity: %0.2f\r\n", hum);
@@ -288,9 +298,6 @@ static void statusLEDUpdate() {
       }
     } else if (STATUS_CHECK_SENSOR == "temp") {
       value = temp;
-      if (USE_FAHRENHEIT) {
-        value = (temp * 9 / 5) + 32;
-      }
     } else if (STATUS_CHECK_SENSOR == "hum") {
       value = hum;
     }
@@ -336,18 +343,12 @@ static void dispHandler() {
   }
 
   String _temp = "-";
-
-  if (USE_FAHRENHEIT) {
-    if (temp > -1001) {
-      _temp = String((temp * 9 / 5) + 32).substring(0, 4);
-    }
-    ln3 = _temp + " " + _hum + "%";
-  } else {
-    if (temp > -1001) {
-      _temp = String(temp).substring(0, 4);
-    }
-    ln3 = _temp + " " + _hum + "%";
+  if (temp > -1001) {
+    _temp = String(temp).substring(0, 4);
   }
+  
+  ln3 = _temp + " " + _hum + "%";
+  
   displayShowText(ln1, ln2, ln3);
 }
 
@@ -419,17 +420,13 @@ String GeneratePrometheusMetrics() {
   if (temp > -1001) {
     if (USE_FAHRENHEIT) {
       message += "# HELP atmp Temperature, in degrees Fahrenheit\n";
-      message += "# TYPE atmp gauge\n";
-      message += "atmp";
-      message += idString;
-      message += String((temp * 9 / 5) + 32);
     } else {
       message += "# HELP atmp Temperature, in degrees Celsius\n";
-      message += "# TYPE atmp gauge\n";
-      message += "atmp";
-      message += idString;
-      message += String(temp);
     }
+    message += "# TYPE atmp gauge\n";
+    message += "atmp";
+    message += idString;
+    message += String(temp);
     message += "\n";
   }
   
