@@ -4,12 +4,13 @@ I, like many others, mostly work from home, spending several hours in a small sp
 
 Inspired by [Jeff Geerling's air quality monitoring setup](https://www.jeffgeerling.com/blog/2021/airgradient-diy-air-quality-monitor-co2-pm25), and being a sucker for DIY and soldering, I decided to invest in a couple of AirGradient's [DIY air sensors](https://www.airgradient.com/diy/). However, much like Jeff, I'd prefer not to send my data to AirGradient indefinitely, and would like to store that data locally using Prometheus and visualising it using Grafana.
 
-This repository describes that process. It borrows heavily from [Jeff's own repository](https://github.com/geerlingguy/airgradient-prometheus), of which this is a fork. However, when trying to follow his approach directly, the code refused to compile. I suspect because the AirGradient Arduino Library that Jeff uses is now outdated. Jeff used 2.4.15 but 3.1.3 is the latest at time of writing, and it seems that the [move from v2 to v3](https://forum.airgradient.com/t/new-airgradient-arduino-library-version-3/1639) has, as expected, removed some backwards compatibility. Therefore, this repository also borrows heavily from the [official AirGradient BASIC example Arduino code](https://github.com/airgradienthq/arduino/tree/master/examples/BASIC).
+This repository describes that process. It borrows heavily from [Jeff's own repository](https://github.com/geerlingguy/airgradient-prometheus), of which this is a fork. However, when trying to follow his approach directly, the code refused to compile. I suspect because the AirGradient Arduino Library that Jeff uses is now outdated. Jeff used 2.4.15 but 3.1.3 is the latest at time of writing, and it seems that the [move from v2 to v3](https://forum.airgradient.com/t/new-airgradient-arduino-library-version-3/1639) has, as expected, removed some backwards compatibility. Therefore, this repository also borrows heavily from the [official AirGradient BASIC example Arduino code](https://github.com/airgradienthq/arduino/tree/master/examples/BASIC). Essentially is is the official AirGradient code with all the phoning-home removed, and with a server instantiated and able to serve metrics to Prometheus when requested.
 
 In addition to bringing Jeff's code up-to-date, this project aims to add a few enhanced features.
 
 - Turn off the display during night time hours to extend its life. Air quality measurement and the Prometheus server remain active even when the screen is off.
 - Add a LED which blinks when PM2.5 or CO2 levels go above a configurable threshold. This is to act as a visual warning/reminder when I'm in the workshop to put on/continue wearing a dust mask.
+- Add an offset adjustment to the temperature sensor. Due to the proximity of the temperature and humidity module to other components, it can be affected by surrounding heat, usually causing it to read a degree or two higher than the true air temperature. This offset allows for this correction to be made depending on your own setup.
 - Improved documentation.
 
 ## Hardware
@@ -37,9 +38,13 @@ Instead of the official case, to protect the sensor from knocks and dust (especi
 
 ### LED
 
-Upon examining the [schematics from AirGradient](https://www.airgradient.com/documentation/diy-v4/#schematics), along with the pinout of the [WEMOS LOLIN D1 Mini](https://www.wemos.cc/en/latest/d1/d1_mini.html) and the [WEMOS 0.66" OLED shield](https://www.wemos.cc/en/latest/d1_mini_shield/oled_0_66.html), we can see that pins D0 (GPIO 16), D7 (GPIO 13), and D8 (GPIO 15) are unpopulated. Conveniently they are also exposed on the left hand side of the AirGradient PCB.
+Upon examining the [schematics from AirGradient](https://www.airgradient.com/documentation/diy-v4/#schematics), along with the pinout of the [WEMOS LOLIN D1 Mini](https://www.wemos.cc/en/latest/d1/d1_mini.html) and the [WEMOS 0.66" OLED shield](https://www.wemos.cc/en/latest/d1_mini_shield/oled_0_66.html), we can see that pins D0, D7, and D8 are unpopulated. Conveniently they are also exposed on the left hand side of the AirGradient PCB. Therefore, we can connect any of these to LED(s) to act as a visual queue to improve ventilation and/or don a dust mask.
 
-Therefore, we can connect any/all of these to LEDs to act as a visual queue to improve ventilation and/or don a dust mask.
+You will need a LED of your choice and a corresponding resistor. The WEMOS D1 Mini operates at 3.3V, meaning that a 75Ω resistor should be sufficient for most LEDs, however I recommend you look up the specifications of your LED and calculate the resistor required yourself (there are plenty of free online calculators available for this purpose). I also used a LED panel mount to fit the LED neatly to the side of my project enclosure and some JST connectors to be able to disconnect the mounted LED easily from the PCB for assembly and disassembly.
+
+Connect the positive side of the LED (the longer leg) to either D0, D7 or D8 on the AirGradient PCB. Connect the resistor to the negative side of the LED and then to ground (labelled G) on the Airgradient PCB.
+
+The LED will illuminate whenever a given sensor's reading rises above a certain value (configured below). It will start to flash if the reading rises even further.
 
 ## Software
 
@@ -51,26 +56,31 @@ Indeed, if this is your first time building the AirGradient sensor, I recommend 
 
 ### Prerequisites
 
-AirGradient Library. Tested with 3.1.3. In the Arduino IDE, go to Tools, Manage Libraries, and then search for AirGradient and install the AirGradient library.
-
-NTPClient (by Fabrice Weinberg). Tested with 3.2.1.
+- AirGradient Library. Tested with 3.1.3. In the Arduino IDE, go to Tools, Manage Libraries, and then search for AirGradient and install the AirGradient library.
+- NTPClient (by Fabrice Weinberg). Tested with 3.2.1.
 
 ### Configuration
 
-At the top of the .ino file in this project, you will find a number of variables that will allow you to configure the functionality of the sensor to your liking.
+At the top of the .ino file in this project, you will find a number of variables that will allow you to configure the functionality of the device to your liking. Change these settings as you desire.
 
-Variable                          | Default     | Description
-----------------------------------|-------------|------------
-`WIFI_SSID`                       | N/A         |
-`WIFI_PASSWORD`                   | N/A         |
-`DEVICE_ID`                       | airgradient |
-`DISP_UPDATE_INTERVAL`            | 30000       | How often the OLED display updates. In milliseconds.
-`UTC_HOUR_OFFSET`                 | 1           |
-`DISPLAY_START_HOUR`              | 7           | 
-`DISPLAY_END_HOUR`                | 23          | 
-`SENSOR_PM_UPDATE_INTERVAL`       | 10000       | How often to get a reading from the PM sensor. In milliseconds.
-`SENSOR_CO2_UPDATE_INTERVAL`      | 10000       | How often to get a reading from the CO2 sensor. In milliseconds.
-`SENSOR_TEMP_HUM_UPDATE_INTERVAL` | 10000       | How often to get a reading from the temperature and humidity sensor. In milliseconds.
+Variable                          | Default       | Description
+----------------------------------|---------------|------------
+`PROMETHEUS_DEVICE_ID`            | "airgradient" | The ID that will be published to Prometheus. Set this to something unique to your device, probably describing its location. Useful if you have more than one device since this ID can be used in Grafana to separate the readings.
+`TEMPERATURE_CORRECTION_OFFSET`   | -1.5          | The offset to apply to the temperature readings. Since the temperature sensor is closely located to other components on the PCB, the reading can be slightly incorrect compared to the true air temperature. This applies a correction to the reading taken from the sensor, in degrees (either Celsius or Fahrenheit depending on the setting below). It's advised that you calibrate the readings of the AirGradient device to another, known-good temperature reading, in the device's final installation location, and then set this offset accordingly.
+`USE_US_AQI`                      | false         | If `true` then PM2.5 measurements will be converted to the [United States' Air Quality Index](https://en.wikipedia.org/wiki/Air_quality_index#United_States) (AQI). If `false`, the PM2.5 readings will be in µg/㎥ (micro gram per metre cubed).
+`USE_FAHRENHEIT`                  | false         | If `true` then temperature measurements will be converted to degrees Fahrenheit. If `false`, the temperature readings will be in degrees Celsius (AKA centigrade).
+`DISP_UPDATE_INTERVAL`            | 30            | How often the OLED display will update to show the latest sensor readings, in seconds.
+`SENSOR_CO2_UPDATE_INTERVAL`      | 10            | How often the CO2 readings will be taken from the sensor, in seconds.
+`SENSOR_PM_UPDATE_INTERVAL`       | 10            | How often the PM readings will be taken from the sensor, in seconds.
+`SENSOR_TEMP_HUM_UPDATE_INTERVAL` | 10            | How often the temperature and humidity readings will be taken from the sensor, in seconds.
+`UTC_OFFSET`                      | 0             | Number of hours offset between your time zone and UTC (Coordinated Universal Time). Use <https://www.timeanddate.com/time/map/> to help you find out what this value should be. This allow the device to calculate the accurate local time in your location, so it can turn on/off the display at the correct time of day (see below).
+`DISPLAY_TURN_ON_HOUR`            | 6             | The hour of the day (in 24 hour format) when the OLED display should turn on and warning LED should operate. I.e. 6 -> turn on at 6 a.m. in the morning, 21 -> turn on at 9 p.m. at night. If you always want the display and warning LED to be _off_ then set `DISPLAY_TURN_ON_HOUR` to a higher number than `DISPLAY_TURN_OFF_HOUR`. If you always want the display and warning LED to be _active_, then set `DISPLAY_TURN_ON_HOUR` to -1 and `DISPLAY_TURN_OFF_HOUR` to 25.
+`DISPLAY_TURN_OFF_HOUR`           | 22            | The hour of the day (in 24 hour format) when the OLED display should turn off and warning LED should deactivate. I.e. 6 -> turn off at 6 a.m. in the morning, 21 -> turn off at 9 p.m. at night. If you always want the display and warning LED to be _off_ then set `DISPLAY_TURN_ON_HOUR` to a higher number than `DISPLAY_TURN_OFF_HOUR`. If you always want the display and warning LED to be _active_, then set `DISPLAY_TURN_ON_HOUR` to -1 and `DISPLAY_TURN_OFF_HOUR` to 25.
+`STATUS_LED`                      | true          | Set to `false` if you have not connected a status LED to the device, or you want to turn off this functionality. If `true` then the status LED will activate; turning on or blinking when the configured sensor's reading rises above the thresholds defined below.
+`STATUS_LED_PIN`                  | D7            | Set to the pin of the WEMOS D1 Mini microcontroller that the positive terminal of the status LED has been connected to.
+`STATUS_CHECK_SENSOR`             | "co2"         | The sensor whose readings are alerted using the status LED when values rise above the thresholds defined below. One of `"co2"`, `"pm"`, `"temp"`, or `"hum"`.
+`STATUS_WARNING_THRESHOLD_VALUE`  | 1001          | When the `STATUS_CHECK_SENSOR` reading rises above this value, then the status LED will turn on.
+`STATUS_DANGER_THRESHOLD_VALUE`   | 1501          | When the `STATUS_CHECK_SENSOR` reading rises above this value, then the status LED will flash.
 
 ## Prometheus
 
