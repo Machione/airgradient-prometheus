@@ -257,6 +257,9 @@ static void co2Update() {
 void pmUpdate() {
   if (ag.pms5003.isFailed() == false) {
     pm25 = ag.pms5003.getPm25Ae();
+    if (USE_US_AQI) {
+      pm25 = ag.pms5003.convertPm25ToUsAqi(pm25);
+    }
     Serial.printf("PMS2.5: %d\r\n", pm25);
     pmFailCount = 0;
   } else {
@@ -293,9 +296,6 @@ static void statusLEDUpdate() {
       value = float(co2Ppm);
     } else if (STATUS_CHECK_SENSOR == "pm") {
       value = float(pm25);
-      if (USE_US_AQI) {
-        value = float(ag.pms5003.convertPm25ToUsAqi(pm25));
-      }
     } else if (STATUS_CHECK_SENSOR == "temp") {
       value = temp;
     } else if (STATUS_CHECK_SENSOR == "hum") {
@@ -318,19 +318,16 @@ static void dispHandler() {
   String ln3 = "";
 
   if (USE_US_AQI) {
-    if (pm25 < 0) {
-      ln1 = "AQI: -";
-    } else {
-      ln1 = "AQI: " + String(ag.pms5003.convertPm25ToUsAqi(pm25));
-    }
+    ln1 += "AQI: ";
   } else {
-    if (pm25 < 0) {
-      ln1 = "PM:  -";
-
-    } else {
-      ln1 = "PM:  " + String(pm25);
-    }
+    ln1 += "PM:  ";
   }
+  if (pm25 < 0) {
+    ln1 += "-";
+  } else {
+    ln1 += String(pm25);
+  }
+  
   if (co2Ppm > -1001) {
     ln2 = "CO2: " + String(co2Ppm);
   } else {
@@ -394,17 +391,13 @@ String GeneratePrometheusMetrics() {
   if (co2Ppm > -1001) {
     if (USE_US_AQI) {
       message += "# HELP pm02 Particulate Matter PM2.5 value, in US AQI\n";
-      message += "# TYPE pm02 gauge\n";
-      message += "pm02";
-      message += idString;
-      message += String(ag.pms5003.convertPm25ToUsAqi(pm25));
     } else {
       message += "# HELP pm02 Particulate Matter PM2.5 value, in μg/m³\n";
-      message += "# TYPE pm02 gauge\n";
-      message += "pm02";
-      message += idString;
-      message += String(pm25);
     }
+    message += "# TYPE pm02 gauge\n";
+    message += "pm02";
+    message += idString;
+    message += String(pm25);
     message += "\n";
   }
   
