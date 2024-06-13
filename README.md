@@ -108,4 +108,10 @@ After saving the updated `prometheus.yml` file, you should see the target appear
 
 ## Grafana
 
-TODO: Add instructions
+You should have Grafana up and running. If not, follow [their official guide](https://grafana.com/docs/grafana/latest/getting-started/build-first-dashboard).
+
+Navigate to your Grafana Web UI, go to Dashboards -> New -> Import. Copy the contents of [grafana.json](./grafana.json) into the "Import via dashboard JSON model" box. Click Load. Select your Prometheus data source. Optionally, you can give your dashboard a different name.
+
+The dashboard is designed to automatically expand with new rows whenever new devices are connected. Each row/device is identified by the `PROMETHEUS_DEVICE_ID` you have set. You can use the filter at the top-left of the dashboard to select which devices to display metrics from in the dashboard.
+
+You may need to adjust the units of the temperature and PM2.5 visualisations. I have opted for degrees Celsius and µg/㎥ since those are the defaults from `USE_FAHRENHEIT` and `USE_US_AQI`. If you change either of these variables to `true`, then Grafana will render the values provided to it using the incorrect values. You can change this by hovering over the top-right of the respective visualisation, clicking the ... menu, and clicking Edit. Scroll through the settings on the right panel until you find the setting for Unit under the category of Standard options. Remove the currently selected unit and optionally replace it with the correct unit.
