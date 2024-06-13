@@ -34,7 +34,7 @@ This twelve-character `yyyyyyyyyyyy` serial number is really what is required to
 
 ### Case
 
-Instead of the official case, to protect the sensor from knocks and dust (especially since I intend to deploy one of them into a workshop) I decided to buy [a project enclosure from AliExpress](https://www.aliexpress.com/item/1005001304761174.html), in size 115-90-55, with ears. This allows for mounting the sensors wherever I wish, and the clear plastic cover means the OLED display can still be seen. Drilling a few ventilation holes and one for the USB-C power cable is easy.
+Instead of the official case, to protect the sensor from knocks and dust (especially since I intend to deploy one of them into a workshop) I decided to buy [a project enclosure from AliExpress](https://www.aliexpress.com/item/1005001304761174.html), in size 115-90-55, with ears. This allows for mounting the sensors wherever I wish, and the clear plastic cover means the OLED display can still be seen. Drilling a few ventilation holes in the sides and one for the USB-C power cable is easy.
 
 ### LED
 
@@ -84,7 +84,27 @@ Variable                          | Default       | Description
 
 ## Prometheus
 
-TODO: Add instructions
+If you haven't already, get Prometheus installed and running. There is a [helpful guide one the Prometheus website](https://prometheus.io/docs/prometheus/latest/getting_started/).
+
+You should assign a static IP address for your AirGradient device. I find it's best to do this in your router's settings. Exactly how this is done will depend on your router's software, so do some Googling. Replace `your_device_ip_address` in the instructions that follow with the IP address you have set.
+
+A server will be running on the device and will be serving the metrics from all the sensors in a format that Prometheus understands at port 9100. After powering on the device and connecting it to your WiFi network, you can test this by trying to access <http://your_device_ip_address:9100/metrics>.
+
+Next, you can add the following to your `prometheus.yml` file, which tells Prometheus where to scrape the information from and how often.
+
+```yaml
+scrape_configs:
+  - job_name: "airgradient"
+    scrape_interval: 60s
+    static_configs:
+      - targets: ["your_device_ip_address:9100"]
+```
+
+You may change the `scrape_interval` to be anything you like, although I wouldn't recommend setting it lower than the sensor update intervals defined above (i.e. `SENSOR_CO2_UPDATE_INTERVAL`, `SENSOR_PM_UPDATE_INTERVAL`, and `SENSOR_TEMP_HUM_UPDATE_INTERVAL`) since the information scraped by Prometheus won't update any more regularly than that.
+
+You can also add more sensors to the list by adding more rows under the `static_configs` like the one above.
+
+After saving the updated `prometheus.yml` file, you should see the target appearing in the Prometheus Web UI. Navigate to it, then click "Targets" under the "Status" dropdown in the menu bar. You should see the IP address of your device there with the "UP" state. If not, check the device is powered, booted correctly, that it has been assigned the desired IP address (a reboot of the device and/or router may be required), that you can access it through your firewall by trying to access <http://your_device_ip_address:9100/metrics> from your browser, and that the `prometheus.yml` settings are correct (check for errors in the Prometheus logs).
 
 ## Grafana
 
