@@ -12,6 +12,7 @@ In addition to bringing Jeff's code up-to-date, this project aims to add a few e
 - Add a LED which blinks when PM2.5 or CO2 levels go above a configurable threshold. This is to act as a visual warning/reminder when I'm in the workshop to put on/continue wearing a dust mask.
 - Add an offset adjustment to the temperature sensor. Due to the proximity of the temperature and humidity module to other components, it can be affected by surrounding heat, usually causing it to read a degree or two higher than the true air temperature. This offset allows for this correction to be made depending on your own setup.
 - Improved documentation.
+- Slightly more robust error checking and failovers.
 
 ## Hardware
 
@@ -23,7 +24,7 @@ I cannot do better than [AirGradient's own build instructions](https://www.airgr
 
 The only gotcha when following the official instructions that I found is that during the connection of the kit to the dashboard, you are asked to provide its serial number. The instructions tell you that when the kit starts up for the first time it will create a wireless access point with SSID in the format `airgradient-xxxxx` where `xxxxx` is the serial number you need. This is incorrect. Instead, the full serial number that you need will be displayed briefly while the kit is booting, after you have connected it to your WiFi. The OLED display will show something like this.
 
-```
+```text
 Warm Up
 Serial#
 'yyyyyyyyy
@@ -65,7 +66,7 @@ At the top of the .ino file in this project, you will find a number of variables
 
 Variable                          | Default       | Description
 ----------------------------------|---------------|------------
-`PROMETHEUS_DEVICE_ID`            | "airgradient" | The ID that will be published to Prometheus. Set this to something unique to your device, probably describing its location. Useful if you have more than one device since this ID can be used in Grafana to separate the readings.
+`PROMETHEUS_DEVICE_ID`            | "AirGradient" | The ID that will be published to Prometheus. Set this to something unique to your device, probably describing its location. Useful if you have more than one device since this ID can be used in Grafana to separate the readings.
 `TEMPERATURE_CORRECTION_OFFSET`   | -1.5          | The offset to apply to the temperature readings. Since the temperature sensor is closely located to other components on the PCB, the reading can be slightly incorrect compared to the true air temperature. This applies a correction to the reading taken from the sensor, in degrees (either Celsius or Fahrenheit depending on the setting below). It's advised that you calibrate the readings of the AirGradient device to another, known-good temperature reading, in the device's final installation location, and then set this offset accordingly.
 `USE_US_AQI`                      | false         | If `true` then PM2.5 measurements will be converted to the [United States' Air Quality Index](https://en.wikipedia.org/wiki/Air_quality_index#United_States) (AQI). If `false`, the PM2.5 readings will be in µg/㎥ (micro gram per metre cubed).
 `USE_FAHRENHEIT`                  | false         | If `true` then temperature measurements will be converted to degrees Fahrenheit. If `false`, the temperature readings will be in degrees Celsius (AKA centigrade).
@@ -79,8 +80,8 @@ Variable                          | Default       | Description
 `STATUS_LED`                      | true          | Set to `false` if you have not connected a status LED to the device, or you want to turn off this functionality. If `true` then the status LED will activate; turning on or blinking when the configured sensor's reading rises above the thresholds defined below.
 `STATUS_LED_PIN`                  | D7            | Set to the pin of the WEMOS D1 Mini microcontroller that the positive terminal of the status LED has been connected to.
 `STATUS_CHECK_SENSOR`             | "co2"         | The sensor whose readings are alerted using the status LED when values rise above the thresholds defined below. One of `"co2"`, `"pm"`, `"temp"`, or `"hum"`.
-`STATUS_WARNING_THRESHOLD_VALUE`  | 1001          | When the `STATUS_CHECK_SENSOR` reading rises above this value, then the status LED will turn on.
-`STATUS_DANGER_THRESHOLD_VALUE`   | 1501          | When the `STATUS_CHECK_SENSOR` reading rises above this value, then the status LED will flash.
+`STATUS_WARNING_THRESHOLD_VALUE`  | 1000          | When the `STATUS_CHECK_SENSOR` reading rises above this value, then the status LED will turn on.
+`STATUS_DANGER_THRESHOLD_VALUE`   | 1500          | When the `STATUS_CHECK_SENSOR` reading rises above this value, then the status LED will flash.
 
 ## Prometheus
 
