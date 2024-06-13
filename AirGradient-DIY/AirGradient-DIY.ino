@@ -13,7 +13,7 @@ CONFIGURATION
 See https://github.com/Machione/airgradient-prometheus?tab=readme-ov-file#configuration
 for detailed instructions.
 */
-#define PROMETHEUS_DEVICE_ID "airgradient"
+#define PROMETHEUS_DEVICE_ID "AirGradient"
 #define TEMPERATURE_CORRECTION_OFFSET -1.5
 
 #define USE_US_AQI false
@@ -31,8 +31,9 @@ for detailed instructions.
 #define STATUS_LED true
 #define STATUS_LED_PIN D7
 #define STATUS_CHECK_SENSOR "co2" /* one of co2, pm, temp, or hum */
-#define STATUS_WARNING_THRESHOLD_VALUE 1001
-#define STATUS_DANGER_THRESHOLD_VALUE 1501
+#define STATUS_WARNING_THRESHOLD_VALUE 1000
+#define STATUS_DANGER_THRESHOLD_VALUE 1500
+
 
 /* Create airgradient instance for 'DIY_BASIC' board */
 static AirGradient ag = AirGradient(DIY_BASIC);
@@ -68,6 +69,7 @@ AgSchedule co2Schedule(SENSOR_CO2_UPDATE_INTERVAL * 1000, co2Update);
 AgSchedule pmsSchedule(SENSOR_PM_UPDATE_INTERVAL * 1000, pmUpdate);
 AgSchedule tempHumSchedule(SENSOR_TEMP_HUM_UPDATE_INTERVAL * 1000, tempHumUpdate);
 AgSchedule statusLEDSchedule(500, statusLEDUpdate);
+
 
 void setup() {
   Serial.begin(115200);
@@ -129,6 +131,7 @@ void setup() {
   delay(1000);
 }
 
+
 void loop() {
   timeClient.update();
   
@@ -155,8 +158,13 @@ void loop() {
   
   server.handleClient();
   
+  if (getCO2FailCount > 10) {
+    executeCo2Calibration();
+  }
+  
   delay(100);
 }
+
 
 void displayShowText(String ln1, String ln2, String ln3) {
   char buf[9];
@@ -176,6 +184,7 @@ void displayShowText(String ln1, String ln2, String ln3) {
   ag.display.show();
   delay(100);
 }
+
 
 static void boardInit(void) {
   /* Init SHT sensor */
@@ -208,12 +217,14 @@ static void boardInit(void) {
   delay(100);
 }
 
+
 static void failedHandler(String msg) {
   while (true) {
     Serial.println(msg);
     delay(1000);
   }
 }
+
 
 static void executeCo2Calibration(void) {
   /* Count down for co2CalibCountdown secs */
@@ -238,6 +249,7 @@ static void executeCo2Calibration(void) {
     delay(2000);
   }
 }
+
 
 static void co2Update() {
   int value = ag.s8.getCo2();
@@ -282,6 +294,8 @@ static void tempHumUpdate() {
     Serial.printf("Temperature: %0.2f\r\n", temp);
     Serial.printf("   Humidity: %0.2f\r\n", hum);
   } else {
+    temp = -1001;
+    hum = -1.0;
     Serial.println("Meaure SHT failed");
   }
 }
@@ -312,6 +326,7 @@ static void statusLEDUpdate() {
   }
 }
 
+
 static void dispHandler() {
   String ln1 = "";
   String ln2 = "";
@@ -322,20 +337,20 @@ static void dispHandler() {
   } else {
     ln1 += "PM:  ";
   }
-  if (pm25 < 0) {
-    ln1 += "-";
-  } else {
+  if (pm25 > -1) {
     ln1 += String(pm25);
+  } else {
+    ln1 += "-";
   }
   
-  if (co2Ppm > -1001) {
+  if (co2Ppm > -1) {
     ln2 = "CO2: " + String(co2Ppm);
   } else {
     ln2 = "CO2: -";
   }
 
   String _hum = "-";
-  if (hum > 0) {
+  if (hum > -1) {
     _hum = String(hum).substring(0, 4);
   }
 
@@ -348,6 +363,7 @@ static void dispHandler() {
   
   displayShowText(ln1, ln2, ln3);
 }
+
 
 static String getDevId(void) { return getNormalizedMac(); }
 
@@ -386,9 +402,9 @@ void HandleNotFound() {
 
 String GeneratePrometheusMetrics() {
   String message = "";
-  String idString = "{id=\"" + String(PROMETHEUS_DEVICE_ID) + "\",mac=\"" + WiFi.macAddress().c_str() + "\"}";
+  String idString = "{sensor=\"airgradient\",id=\"" + String(PROMETHEUS_DEVICE_ID) + "\",mac=\"" + WiFi.macAddress().c_str() + "\"}";
   
-  if (co2Ppm > -1001) {
+  if (co2Ppm > -1) {
     if (USE_US_AQI) {
       message += "# HELP pm02 Particulate Matter PM2.5 value, in US AQI\n";
     } else {
@@ -401,7 +417,7 @@ String GeneratePrometheusMetrics() {
     message += "\n";
   }
   
-  if (co2Ppm > -1001) {
+  if (co2Ppm > -1) {
     message += "# HELP rco2 CO2 value, in ppm\n";
     message += "# TYPE rco2 gauge\n";
     message += "rco2";
@@ -423,7 +439,7 @@ String GeneratePrometheusMetrics() {
     message += "\n";
   }
   
-  if (hum > 0) {
+  if (hum > -1) {
     message += "# HELP rhum Relative humidity, in percent\n";
     message += "# TYPE rhum gauge\n";
     message += "rhum";
