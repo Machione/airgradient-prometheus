@@ -1,6 +1,7 @@
 # AirGradient Basic/DIY - Prometheus
 
 ![Built AirGradient DIY Basic + enclosure + LED](./docs/img/hardware.jpeg "hardware.jpeg")
+![Grafana dashboard](./docs/img/grafana.jpeg "grafana.jpeg")
 
 Like many others, I mostly work from home, spending several hours in a small spare room of my house. In my location, it is very uncommon to air condition your home, and for much of the year it is too cold to keep a window open for long periods of time. I was interested to see what impact air quality had on my mental performance and measure the affect of different ventilation approaches. Additionally, having woodworking as a hobby means that I'm also concerned about the amount of fine particulate matter that I inadvertently may be breathing in, even after any visible wood dust has dissipated.
 
