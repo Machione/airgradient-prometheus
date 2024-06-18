@@ -2,7 +2,7 @@
 
 ## Hardware
 
-![Built AirGradient DIY Basic + enclosure + LED](./img/hardware.jpeg "hardware.jpeg")
+<img src="./img/hardware.jpeg" width="25%" alt="Built AirGradient DIY Basic + enclosure + LED"/>
 
 The [hardware guide](./hardware.md) will instruct you through the initial assembly of the AirGradient DIY Basic kit, enclosure, and installation of the warning LED. If you follow all steps in the guide, you should end up with a sensor looking like the picture above. Of course, the addition of a case and warning LED is optional.
 
