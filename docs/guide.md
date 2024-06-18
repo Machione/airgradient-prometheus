@@ -8,6 +8,6 @@ The [hardware guide](./hardware.md) will instruct you through the initial assemb
 
 ## Software
 
-![Grafana dashboard](./img/grafana.jpeg "grafana.jpeg")
+![Grafana dashboard](./img/grafana.png "grafana.jpeg")
 
 The [software guide](./software.md) will instruct you through flashing the WEMOS LOLIN D1 Mini, configuring the software to your preferences and calibrating the sensor to your location and setup. It will also guide you through the configuration needed on Prometheus and Grafana to get a dashboard set up to record and display air quality metrics over time.
