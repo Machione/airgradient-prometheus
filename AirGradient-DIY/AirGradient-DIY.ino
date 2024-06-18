@@ -14,7 +14,7 @@ See https://github.com/Machione/airgradient-prometheus?tab=readme-ov-file#config
 for detailed instructions.
 */
 #define PROMETHEUS_DEVICE_ID "AirGradient"
-#define TEMPERATURE_CORRECTION_OFFSET -1.5
+#define TEMPERATURE_CORRECTION_OFFSET -3.5
 
 #define USE_US_AQI false
 #define USE_FAHRENHEIT false
